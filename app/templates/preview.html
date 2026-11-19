@@ -14,6 +14,13 @@
     直接确认会被拒绝；请基于最新版本重新上传修正文件。
   </div>
   {% endif %}
+  {% if draft.segment_id %}
+  <div class="flash flash-info">
+    本预览由记录仪采集段 <a href="{{ url_for('segment_page', segment_id=draft.segment_id) }}">{{ draft.segment_id }}</a>
+    的整段补传读数生成；温度上限、装卸资料与修订号均取自 rev {{ draft.expected_revision }} 正式版。
+    采集段进行期间手工修订入口关闭，半段读数不会进入确认。
+  </div>
+  {% endif %}
 
   <table>
     <thead>
@@ -52,6 +59,14 @@
 </div>
 
 <div class="card">
+  {% if draft.segment_id %}
+  <h2>采集段预览（手工修订已关闭）</h2>
+  <p class="muted">
+    本预览来自采集段补传，不能在此手工替换 CSV。如需放弃，可回到
+    <a href="{{ url_for('segment_page', segment_id=draft.segment_id) }}">采集段页面</a>放弃该段；
+    确认后整趟替换为 rev {{ draft.expected_revision + 1 }}。
+  </p>
+  {% else %}
   <h2>修正后重新预览（只重新上传需要替换的文件，其余沿用当前数据）</h2>
   <form method="post" action="{{ url_for('revise', trip_id=draft.trip_id) }}" enctype="multipart/form-data">
     <div class="grid2">
@@ -72,6 +87,7 @@
       <button type="submit" class="warn">重新计算预览</button>
     </p>
   </form>
+  {% endif %}
 
   <form method="post" action="{{ url_for('confirm', trip_id=draft.trip_id) }}" style="margin-top:8px">
     <button type="submit" {% if stale %}disabled title="预览已过期，请重新修正"{% endif %}>

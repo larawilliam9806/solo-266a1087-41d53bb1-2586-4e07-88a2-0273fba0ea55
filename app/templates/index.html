@@ -44,13 +44,16 @@
         <td>{{ t.temp_limit }} ℃</td>
         <td>{{ t.boxes }}</td>
         <td>{{ t.confirmed_at }}</td>
-        <td><a class="btn" href="{{ url_for('trip_detail', trip_id=t.id) }}">查看结论</a></td>
+        <td>
+          <a class="btn" href="{{ url_for('trip_detail', trip_id=t.id) }}">查看结论</a>
+          <a class="btn secondary" href="{{ url_for('trip_detail', trip_id=t.id) }}#segment">记录仪补传</a>
+        </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <p class="muted">还没有已确认的趟次。</p>
+  <p class="muted">还没有已确认的趟次。先在上方上传温度与装卸 CSV，确认后即可对该趟建立记录仪离线补传采集段。</p>
   {% endif %}
 </div>
 {% endblock %}

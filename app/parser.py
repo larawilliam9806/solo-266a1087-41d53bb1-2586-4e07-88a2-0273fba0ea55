@@ -19,6 +19,15 @@ RIDE_ALIASES = {
     "loaded_at": ("loaded_at", "load_time", "loaded", "装车时刻", "装车时间"),
     "unloaded_at": ("unloaded_at", "unload_time", "unloaded", "卸车时刻", "卸车时间"),
 }
+# 记录仪离线补传：序号、UTC 时刻、摄氏度
+SEGMENT_ALIASES = {
+    "seq": ("seq", "sequence", "sequence_no", "index", "序号", "序列号", "记录序号", "编号"),
+    "timestamp_utc": (
+        "timestamp_utc", "timestamp", "time", "utc_time",
+        "utc时刻", "utc时间", "时刻", "时间",
+    ),
+    "celsius": ("celsius", "temperature", "temp", "温度", "摄氏度"),
+}
 
 
 class CSVError(ValueError):
@@ -111,3 +120,43 @@ def parse_handling_csv(content: bytes) -> list[tuple[str, int, int]]:
     if not rides:
         raise CSVError("装卸文件没有任何数据行")
     return rides
+
+
+def parse_segment_csv(content: bytes) -> list[tuple[int, int, float]]:
+    """解析记录仪补传批次 CSV：列为 seq（序号）、timestamp_utc（UTC 时刻）、celsius。
+
+    允许乱序、允许同序号重复行（同刻同温视为重复，异内容由存储层整批拒绝）。
+    返回 (seq, epoch_seconds, celsius) 列表，保持文件中的原始行顺序。
+    """
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise CSVError("补传文件不是 UTF-8 编码") from exc
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows or not any(c.strip() for c in rows[0]):
+        raise CSVError("补传文件为空或缺少表头")
+    cols = _resolve_columns(rows[0], SEGMENT_ALIASES)
+    records: list[tuple[int, int, float]] = []
+    for offset, row in enumerate(rows[1:], start=2):
+        if not row or not any(c.strip() for c in row):
+            continue
+        if len(row) <= max(cols.values()):
+            raise CSVError(f"第 {offset} 行：列数不足")
+        raw_seq = row[cols["seq"]].strip()
+        try:
+            seq = int(raw_seq)
+        except ValueError as exc:
+            raise CSVError(f"第 {offset} 行：序号不是整数（{raw_seq}）") from exc
+        if seq < 0:
+            raise CSVError(f"第 {offset} 行：序号不能为负数（{raw_seq}）")
+        ts = parse_timestamp(row[cols["timestamp_utc"]], offset, "timestamp_utc")
+        raw = row[cols["celsius"]].strip()
+        try:
+            temp = float(raw)
+        except ValueError as exc:
+            raise CSVError(f"第 {offset} 行：温度不是数字（{raw}）") from exc
+        records.append((seq, ts, temp))
+    if not records:
+        raise CSVError("补传文件没有任何数据行")
+    return records

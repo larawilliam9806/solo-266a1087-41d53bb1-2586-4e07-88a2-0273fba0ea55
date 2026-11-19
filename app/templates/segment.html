@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}采集段补传 · {{ trip.name }}{% endblock %}
+{% block body %}
+<div class="card">
+  <h1>记录仪采集段补传
+    {% if segment.status == 'open' %}<span class="badge badge-ok">进行中</span>
+    {% elif segment.status == 'generated' %}<span class="badge badge-rev">已生成预览</span>
+    {% else %}<span class="badge badge-unk">已放弃/失效</span>{% endif %}
+  </h1>
+  <p class="muted">
+    所属趟次 <a href="{{ url_for('trip_detail', trip_id=trip.id) }}">{{ trip.name }}</a>
+    （<code>{{ trip.id }}</code>，当前正式版 rev {{ trip.revision }}）<br>
+    记录仪编号 <strong>{{ segment.logger_id }}</strong> ｜ 预期序号
+    <strong>{{ segment.seq_start }} – {{ segment.seq_end }}</strong>
+    （共 {{ segment.seq_end - segment.seq_start + 1 }} 个）｜
+    绑定正式版 <strong>rev {{ segment.base_revision }}</strong> ｜
+    已接收 <strong>{{ readings|length }}</strong> 条
+  </p>
+  {% if segment.status != 'open' %}
+  <div class="warn-box">
+    该采集段已关闭（{{ segment.status }}），不能再上传批次或重新生成预览；已接收读数与批次记录保留备查。
+  </div>
+  {% endif %}
+  {% if draft %}
+  <div class="flash flash-info">
+    本采集段已生成待确认预览（基于 rev {{ draft.expected_revision }}），
+    <a href="{{ url_for('preview', trip_id=trip.id) }}">前往预览页核对并确认</a>。
+    {% if stale %}
+    <strong>注意：正式版已推进，直接确认会被拒绝。</strong>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <h2>缺口序号（{{ missing|length }} 个）</h2>
+  {% if missing %}
+  <p class="seg unk">
+    {% for s in missing %}{{ s }}{% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% else %}
+  <p class="ok"><strong>序号已齐全。</strong>还需满足时刻随序号严格递增才能生成预览。</p>
+  {% endif %}
+</div>
+
+{% if segment.status == 'open' and not draft %}
+<div class="card">
+  <h2>分批上传补传 CSV</h2>
+  <form method="post" action="{{ url_for('upload_segment_batch', segment_id=segment.id) }}"
+        enctype="multipart/form-data">
+    <label>补传 CSV（列：seq, timestamp_utc, celsius；允许乱序、分批、同内容重传）</label>
+    <input type="file" name="batch_file" accept=".csv,text/csv" required>
+    <p class="muted" style="margin-top:10px">
+      同序号同内容重传幂等不变；同序号异内容或序号超出
+      {{ segment.seq_start }}–{{ segment.seq_end }} 时<strong>整批拒绝</strong>，已接收数据不受影响。
+    </p>
+    <button type="submit">上传本批</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>已接收读数（按序号）</h2>
+  {% if readings %}
+  <table>
+    <thead><tr><th>序号</th><th>UTC 时刻</th><th>摄氏度</th></tr></thead>
+    <tbody>
+    {% for seq, ts, c in readings %}
+      <tr><td>{{ seq }}</td><td class="seg">{{ ts|fmt }}</td><td>{{ c }} ℃</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">尚未接收到任何读数。</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>批次记录</h2>
+  {% if batches %}
+  <table>
+    <thead><tr><th>#</th><th>结果</th><th>行数</th><th>说明</th><th>时间(UTC)</th></tr></thead>
+    <tbody>
+    {% for b in batches %}
+      <tr>
+        <td>{{ b.id }}</td>
+        <td>{% if b.accepted %}<span class="badge badge-ok">已接收</span>
+            {% else %}<span class="badge badge-hot">整批拒绝</span>{% endif %}</td>
+        <td>{{ b.row_count }}</td>
+        <td>{{ b.message }}</td>
+        <td class="seg">{{ b.created_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">还没有上传过批次。</p>
+  {% endif %}
+</div>
+
+{% if segment.status == 'open' %}
+<div class="card">
+  <h2>生成预览 / 放弃采集段</h2>
+  <form method="post" action="{{ url_for('generate_segment_preview', segment_id=segment.id) }}"
+        style="display:inline">
+    <button type="submit" {% if missing or draft %}disabled
+      title="{% if missing %}还有缺号，序号齐全后才能生成{% else %}已生成预览{% endif %}"{% endif %}>
+      用整段读数生成待确认温度预览
+    </button>
+  </form>
+  <form method="post" action="{{ url_for('abort_segment_route', segment_id=segment.id) }}"
+        style="display:inline; margin-left:12px"
+        onsubmit="return confirm('放弃后该采集段立即失效，已接收读数仅留存备查，确定？');">
+    <button type="submit" class="warn">放弃采集段</button>
+  </form>
+  <p class="muted" style="margin-top:10px">
+    生成时再次校验：序号齐全且时刻随序号严格递增；预览的装卸资料、温度上限与修订号均取自
+    rev {{ segment.base_revision }} 正式版。半段读数永远不会进入确认流程。
+  </p>
+</div>
+{% endif %}
+{% endblock %}

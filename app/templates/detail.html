@@ -46,10 +46,73 @@
   <p class="muted" style="margin-top:10px">时长格式 时:分:秒；未知时段不按合格处理。</p>
 </div>
 
+<div class="card" id="segment">
+  <h2>记录仪离线补传（采集段）</h2>
+  <p class="muted">
+    记录仪离线后同一趟的测温记录可分批补传。新建采集段时固定当前正式版
+    rev {{ trip.revision }} 为基准；补传齐全并通过严格递增校验后，生成该趟的待确认温度预览，
+    装卸资料与修订号均取自同一正式版。
+  </p>
+  {% if segments %}
+  <table style="margin-bottom:14px">
+    <thead><tr><th>采集段</th><th>记录仪</th><th>预期序号</th><th>基准版本</th><th>状态</th><th>已接收</th><th></th></tr></thead>
+    <tbody>
+    {% for s in segments %}
+      <tr>
+        <td class="seg">{{ s.id }}</td>
+        <td>{{ s.logger_id }}</td>
+        <td>{{ s.seq_start }}–{{ s.seq_end }}</td>
+        <td>rev {{ s.base_revision }}</td>
+        <td>
+          {% if s.status == 'open' %}<span class="badge badge-ok">进行中</span>
+          {% elif s.status == 'generated' %}<span class="badge badge-rev">已生成预览</span>
+          {% else %}<span class="badge badge-unk">已放弃/失效</span>{% endif %}
+        </td>
+        <td>{{ s.received }} / {{ s.total }}</td>
+        <td><a class="btn secondary" href="{{ url_for('segment_page', segment_id=s.id) }}">打开</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if open_segment %}
+  <div class="warn-box">
+    该趟次已有进行中的采集段 <a href="{{ url_for('segment_page', segment_id=open_segment.id) }}">{{ open_segment.id }}</a>，
+    完成或放弃它之前不能新建采集段，也不能走下方手工修订入口。
+  </div>
+  {% elif has_draft %}
+  <div class="warn-box">
+    该趟次存在待确认草稿，<a href="{{ url_for('preview', trip_id=trip.id) }}">前往预览页</a>
+    先确认或放弃草稿，再新建采集段。
+  </div>
+  {% else %}
+  <form method="post" action="{{ url_for('create_segment_route') }}" enctype="multipart/form-data">
+    <input type="hidden" name="trip_id" value="{{ trip.id }}">
+    <div class="grid2">
+      <div>
+        <label>记录仪编号</label>
+        <input type="text" name="logger_id" placeholder="例如 LOGGER-A17" required>
+      </div>
+      <div>
+        <label>预期起止序号（含端点，整数）</label>
+        <div style="display:flex; gap:8px; align-items:center">
+          <input type="number" name="seq_start" min="0" value="1" required style="flex:1">
+          <span>至</span>
+          <input type="number" name="seq_end" min="0" value="12" required style="flex:1">
+        </div>
+      </div>
+    </div>
+    <p style="margin-top:14px"><button type="submit">新建采集段并去补传</button></p>
+  </form>
+  {% endif %}
+</div>
+
 <div class="card">
-  <h2>发起修订</h2>
-  <p class="muted">上传修正后的温度/装卸文件（可只传其中一个），先预览变化，确认后整趟替换为 rev {{ trip.revision + 1 }}。</p>
-  <form method="post" action="{{ url_for('revise', trip_id=trip.id) }}" enctype="multipart/form-data">
+  <h2>发起修订（原手工上传入口，照旧）</h2>
+  <p class="muted">上传修正后的温度/装卸文件（可只传其中一个），先预览变化，确认后整趟替换为 rev {{ trip.revision + 1 }}。{% if open_segment %}当前有进行中的采集段，本入口暂时关闭。{% endif %}</p>
+  <form method="post" action="{{ url_for('revise', trip_id=trip.id) }}" enctype="multipart/form-data"
+        {% if open_segment %}onsubmit="return false;"{% endif %}>
+    <fieldset {% if open_segment %}disabled style="border:0; padding:0; margin:0; opacity:.55"{% endif %}>
     <div class="grid2">
       <div>
         <label>趟次名称</label>
@@ -65,6 +128,7 @@
       </div>
     </div>
     <p style="margin-top:14px"><button type="submit" class="warn">上传修正并预览</button></p>
+    </fieldset>
   </form>
   {% if has_draft %}<p class="muted">该趟次存在未确认的草稿预览，<a href="{{ url_for('preview', trip_id=trip.id) }}">前往预览页</a>。</p>{% endif %}
 </div>

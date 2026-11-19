@@ -3,7 +3,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.parser import CSVError, parse_handling_csv, parse_temperature_csv
+from app.parser import (
+    CSVError, parse_handling_csv, parse_segment_csv, parse_temperature_csv,
+)
 
 
 def _epoch(text: str) -> int:
@@ -69,3 +71,41 @@ def test_empty_files_rejected():
         parse_temperature_csv(b"")
     with pytest.raises(CSVError):
         parse_handling_csv(b"timestamp_utc,celsius\n")
+
+
+def test_parse_segment_basic_and_unordered():
+    csv_text = (
+        "seq,timestamp_utc,celsius\n"
+        "3,2026-11-18T08:10:00Z,7.0\n"
+        "1,2026-11-18T08:00:00Z,5.0\n"
+        "2,2026-11-18T08:05:00Z,6.0\n"
+    )
+    out = parse_segment_csv(csv_text.encode())
+    assert out == [
+        (3, _epoch("2026-11-18T08:10:00Z"), 7.0),
+        (1, _epoch("2026-11-18T08:00:00Z"), 5.0),
+        (2, _epoch("2026-11-18T08:05:00Z"), 6.0),
+    ]
+
+
+def test_parse_segment_chinese_aliases():
+    out = parse_segment_csv("序号,UTC时刻,摄氏度\n7,2026-11-18 08:00:00,5.2\n".encode("utf-8-sig"))
+    assert out == [(7, _epoch("2026-11-18T08:00:00Z"), 5.2)]
+
+
+def test_parse_segment_bad_seq_and_temp():
+    with pytest.raises(CSVError, match="序号不是整数"):
+        parse_segment_csv(b"seq,timestamp_utc,celsius\nx,2026-11-18T08:00:00Z,5\n")
+    with pytest.raises(CSVError, match="温度不是数字"):
+        parse_segment_csv(b"seq,timestamp_utc,celsius\n1,2026-11-18T08:00:00Z,hot\n")
+    with pytest.raises(CSVError, match="序号不能为负数"):
+        parse_segment_csv(b"seq,timestamp_utc,celsius\n-1,2026-11-18T08:00:00Z,5\n")
+
+
+def test_parse_segment_empty_and_missing_column():
+    with pytest.raises(CSVError):
+        parse_segment_csv(b"")
+    with pytest.raises(CSVError, match="缺少必需列"):
+        parse_segment_csv(b"foo,bar\n1,2\n")
+    with pytest.raises(CSVError):
+        parse_segment_csv(b"seq,timestamp_utc,celsius\n")
